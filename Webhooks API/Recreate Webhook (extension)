@@ -1,0 +1,73 @@
+// Your personal access token
+const token = 'YOUR-AIRTABLE-PAT-HERE';
+
+// Initialize the API authorization
+const authorizationHeader = {
+    "Authorization": `Bearer ${token}`,
+    "Content-Type": "application/json"
+};
+
+// List current webhooks
+const listWebhooksResponse = await fetch(`https://api.airtable.com/v0/bases/${base.id}/webhooks`, {
+    method: 'GET',
+    headers: authorizationHeader
+});
+
+const listWebhooksData = await listWebhooksResponse.json();
+
+// Delete current webhooks
+for (const webhook of listWebhooksData.webhooks) {
+    await fetch(`https://api.airtable.com/v0/bases/${base.id}/webhooks/${webhook.id}`, {
+        method: 'DELETE',
+        headers: authorizationHeader
+    });
+}
+
+// Ask the user for the Webhook URL
+let webhookUrl = await input.textAsync('Please enter the Webhook URL:');
+
+// Validate the input URL
+if (!webhookUrl || !webhookUrl.startsWith('http')) {
+    console.log('Invalid URL entered');
+    output.text('Invalid URL. Exiting.');
+    return;
+}
+
+// Define the Webhook payload
+const webhookPayload = {
+    "notificationUrl": webhookUrl,
+    "specification": {
+        "options": {
+            "filters": {
+                "fromSources": ["sync"],
+                "dataTypes": ["tableData"]
+            }
+        }
+    }
+};
+
+console.log('Sending webhook creation request to Airtable API');
+
+try {
+    // Create the Webhook
+    const createWebhookResponse = await fetch(`https://api.airtable.com/v0/bases/${base.id}/webhooks`, {
+        method: 'POST',
+        headers: authorizationHeader,
+        body: JSON.stringify(webhookPayload)
+    });
+
+    console.log(`Received response with status: ${createWebhookResponse.status}`);
+
+    if (createWebhookResponse.ok) {
+        const webhookData = await createWebhookResponse.json();
+        console.log('Webhook ID:', webhookData.id);
+        output.text(`Webhook created successfully!`);
+    } else {
+        const errorData = await createWebhookResponse.json();
+        console.log('Failed to create the webhook. Error:', errorData);
+        output.text(`Failed to create the webhook. Error: ${JSON.stringify(errorData)}`);
+    }
+} catch (error) {
+    console.log('An error occurred:', error);
+    output.text(`An error occurred: ${error}`);
+}
