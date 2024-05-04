@@ -1,0 +1,29 @@
+// get the input config and record ID
+let inputConfig = input.config();
+let recordId = inputConfig.recordId;
+// log the received input
+console.log(Received record ID: ${recordId});
+// define the webhook URL
+let webhookUrl = inputConfig.webhookUrl;
+// log the webhook URL
+console.log(Webhook URL: ${webhookUrl});
+// create the payload to send to the webhook
+let payload = {
+recordId: recordId
+};
+// send the payload to the webhook URL
+fetch(webhookUrl, {
+method: 'POST',
+headers: {
+'Content-Type': 'application/json'
+},
+body: JSON.stringify(payload)
+})
+.then(response => {
+// log the response from the webhook
+console.log(Webhook response: ${response.status} - ${response.statusText});
+})
+.catch(error => {
+// log any errors that occur during the process
+console.error(Error sending payload to webhook: ${error});
+});
