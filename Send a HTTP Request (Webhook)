@@ -1,45 +1,9 @@
-let table = base.getTable('tblT83C3X9yfjfjOI');  // Replace with your table ID for "Policies"
-let excludedFields = [
-    'fldPoQj4DywtajqCB',  // ID for "Unit"
-    'fldJyrMSNvu0xTiCe',  // ID for "Users"
-    'fldybdtT8sehrkd74',  // ID for "Organization"
-    'fldIDzBQgh3uF2BBw',   // ID for "Position"
-];
-
-let record = await input.recordAsync('Select a record to duplicate', table);
-
-if (record) {
-    let fieldDescriptors = table.fields;
-    let newRecordFields = {};
-
-    for (let field of fieldDescriptors) {
-        // Check if the field is a computed type
-        const isComputed = ['formula', 'lookup', 'rollup', 'count', 'autoNumber'].includes(field.type) || field.isComputed;
-
-        // Skip excluded fields, locked fields, and computed fields
-        if (!excludedFields.includes(field.id) && !field.isLocked && !isComputed) {
-            newRecordFields[field.id] = record.getCellValue(field);
-        }
-    }
-
-    // Create the new record with the copied values
-    await table.createRecordAsync(newRecordFields);
-    output.text('Record duplicated successfully.');
-} else {
-    output.text('No record selected.');
-}
-
-async function sendWebhook(recordID)
+async function sendWebhook(recordId, webhookUrl)
 {
-    // get the input config and record ID
-    let inputConfig = input.config();
-    let recordId = inputConfig.recordId;
     // log the received input
-    console.log('Received record ID: ${recordId}');
-    // define the webhook URL
-    let webhookUrl = inputConfig.webhookUrl;
+    console.log(`Received record ID: ${recordId}`);
     // log the webhook URL
-    console.log('Webhook URL: ${webhookUrl}');
+    console.log(`Webhook URL: ${webhookUrl}`);
     // create the payload to send to the webhook
         let payload = {
         recordId: recordId
@@ -54,10 +18,10 @@ async function sendWebhook(recordID)
     })
     .then(response => {
         // log the response from the webhook
-        console.log('Webhook response: ${response.status} - ${response.statusText}');
+        console.log(`Webhook response: ${response.status} - ${response.statusText}`);
     })
     .catch(error => {
         // log any errors that occur during the process
-        console.error('Error sending payload to webhook: ${error}');
+        console.error(`Error sending payload to webhook: ${error}`);
     });
 }
