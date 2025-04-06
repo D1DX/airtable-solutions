@@ -1,11 +1,8 @@
-// Script Name: syncParentChildLinks_single.js
-// Purpose: Syncs a single record's link from 'source' (parent field) to each parent's 'dest' (child field)
-
 let config = input.config();
 let tableId = config.table;
 let source = config.source;
 let dest = config.dest;
-let recordId = config.recordId;
+let recordId = config.record;
 
 const syncOneRecord = async (tableId, source, dest, recordId) => {
     const table = base.getTable(tableId);
