@@ -1,5 +1,5 @@
 // Personal access token
-const token = '[[YOUR-API-KEY]]';
+const token = 'YOUR-AIRTABLE-PAT-HERE';
 
 // Initialize the API authorization
 const authorizationHeader = {
