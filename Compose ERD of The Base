@@ -1,11 +1,63 @@
-//
-// Enhanced ERD Generator - No Quotes for Enumerations
-// ---------------------------------------------------
-
 // ------------------------------------------------------
 // 1) USER CONFIG & DICTIONARIES
 // ------------------------------------------------------
+
+/*****************************************************************
+ *  TABLE-SELECTION LOGIC
+ *****************************************************************/
+let selectedTableIds = [];
+
+// 1) Ask up-front whether to process all tables
+let allOrNot = await input.buttonsAsync(
+    "Process all tables in the base?",
+    [
+        { label: "Yes – include everything", value: "all", variant: "primary" },
+        { label: "No – let me pick manually", value: "pick" }
+    ]
+);
+
+if (allOrNot === "all") {
+    // Simple – grab every table ID
+    selectedTableIds = base.tables.map(t => t.id);
+} else {
+    // 2) Manual picker – Method 1
+    while (true) {
+        // Build a list of tables that haven’t been picked yet
+        let remaining = base.tables.filter(t => !selectedTableIds.includes(t.id));
+
+        // Safety – if none remain we are done
+        if (remaining.length === 0) break;
+
+        // Button set: one button per remaining table
+        let buttons = remaining.map(t => ({ label: t.name, value: t.id }));
+
+        // Show a DONE button **only after one or more selections**
+        if (selectedTableIds.length > 0) {
+            buttons.push({ label: "Done", value: 'DONE', variant: "primary" });
+        }
+
+        // Prompt the user
+        let choice = await input.buttonsAsync(
+            selectedTableIds.length === 0
+                ? "Select at least one table, then press Done"
+                : "Add another table or press Done",
+            buttons
+        );
+
+        // When DONE is pressed (choice === null) exit the loop
+        if (choice === 'DONE') break;
+
+        // Otherwise store the selected table ID and continue
+        selectedTableIds.push(choice);
+    }
+}
+
 let showIds = await input.buttonsAsync('Do you want to include table and field IDs in the output?', [
+    { label: 'Yes', value: true },
+    { label: 'No', value: false }
+]);
+
+let includeOptions = await input.buttonsAsync('Do you want to include field options in the output?', [
     { label: 'Yes', value: true },
     { label: 'No', value: false }
 ]);
@@ -513,12 +565,12 @@ buildDictionaries();
 
 output.markdown(`# Base: **${base.name}**`);
 if (showIds) {
-    output.markdown(`Base ID: \`${base.id}\`\n`);
+    output.markdown(`Base ID: \`${base.id}\``);
 }
 output.markdown('\n---');
 output.markdown('\n---');
 
-for (let table of base.tables) {
+for (let table of base.tables.filter(t => selectedTableIds.includes(t.id))) {
     output.markdown(`## Table: **${table.name}**`);
     if (showIds) {
         output.markdown(`Table ID: \`${table.id}\``);
@@ -536,12 +588,17 @@ for (let table of base.tables) {
             output.markdown(`Description: ${field.description}`);
         }
 
-        let opts = formatOptions(field);
-        if (opts.trim().length > 0) {
-            output.markdown(`\n**Options**:\n${opts}`);
+        if (includeOptions) {
+            let opts = formatOptions(field);
+            if (opts.trim().length > 0) {
+                output.markdown(`\n**Options**:\n${opts}`);
+            }
         }
-    }
+    }   // end field loop
+
     output.markdown('\n---');
-}
+}       // end table loop
+
+output.markdown('\n**End of Enhanced ERD Output**');
 
 output.markdown('\n**End of Enhanced ERD Output**');
