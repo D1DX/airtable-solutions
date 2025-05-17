@@ -599,6 +599,4 @@ for (let table of base.tables.filter(t => selectedTableIds.includes(t.id))) {
     output.markdown('\n---');
 }       // end table loop
 
-output.markdown('\n**End of Enhanced ERD Output**');
-
-output.markdown('\n**End of Enhanced ERD Output**');
+output.markdown('\n**End of ERD Output**');
