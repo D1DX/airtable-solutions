@@ -1,5 +1,5 @@
 /***********************************************************************
- * Airtable Multi-Table ➜ Results synchroniser   •   v2.4 (2025-06-02)
+ * Airtable Multi-Table ➜ Results synchroniser   •   v2.5 (2025-06-02)
  * --------------------------------------------------------------------
  * Mirrors records from every table in the base (except excluded ones)
  * into a single “Results” table.
@@ -76,6 +76,10 @@ const fetchTableRecords = async tableId => {
 };
 
 /* ========== RECORD HELPERS ========== */
+
+/**
+ * Extract a simple value from Airtable cell data.
+ */
 const extractFieldValue = v => {
   if (!v) {
     return null;
@@ -94,12 +98,18 @@ const extractFieldValue = v => {
   return candidate;
 };
 
+/**
+ * Check if a particular field’s value changed between source and target.
+ */
 const hasFieldChanged = (src, tgt, field) => {
   const srcVal = extractFieldValue(src.getCellValue(field)) || "";
   const tgtVal = extractFieldValue(tgt.getCellValue(field)) || "";
   return srcVal !== tgtVal;
 };
 
+/**
+ * Build the “fields” object for Results record based on source record.
+ */
 const buildFieldsObject = (schemaFields, srcRec) => {
     const fields = { '-Source Record ID-': srcRec.id };
     schemaFields.forEach(f => {
@@ -108,6 +118,9 @@ const buildFieldsObject = (schemaFields, srcRec) => {
     return fields;
 };
 
+/**
+ * Determine if any non-key data changed or if “Destroyed?” was true.
+ */
 const hasAnyDataChanged = (srcRec, resRec, schemaFields) => {
   for (const f of schemaFields) {
     if (hasFieldChanged(srcRec, resRec, f.name)) {
@@ -131,6 +144,9 @@ const hasAnyDataChanged = (srcRec, resRec, schemaFields) => {
   return false;
 };
 
+/**
+ * Compare a source record with its existing Results counterpart. 
+ */
 const compareWithExisting = (srcRec, resRec, schemaFields) => {
     const mustRefresh = REFRESH_FIELDS.some(f =>
         schemaFields.some(sf => sf.name === f) && hasFieldChanged(srcRec, resRec, f)
@@ -148,7 +164,10 @@ const compareWithExisting = (srcRec, resRec, schemaFields) => {
     };
 };
 
-/* ========== PREPARATION ========== */
+/**
+ * Prepare lists of records to create, update, or refresh/destroy 
+ * based on diff between source and existing Results.
+ */
 const prepareTableDiff = (srcRecs, existingMap, schemaFields) => {
     const toCreate  = [];
     const toUpdate  = [];
@@ -174,6 +193,80 @@ const prepareTableDiff = (srcRecs, existingMap, schemaFields) => {
     return { toCreate, toUpdate, toRefresh, seenIds };
 };
 
+/* ========== TYPE-FORMATTING HELPERS ========== */
+
+/**
+ * Convert a raw value into the structure Airtable’s API expects
+ * for the given Results-table field type.
+ */
+const formatForFieldType = (val, type) => {
+    if (val === undefined || val === null) return null;
+
+    switch (type) {
+        /* Text fields */
+        case 'singleLineText':
+        case 'richText':
+        case 'multilineText':
+            return String(val);
+
+        /* Single select */
+        case 'singleSelect':
+            return typeof val === 'string' ? { name: val } : val;
+
+        /* Multiple select */
+        case 'multipleSelects':
+            if (Array.isArray(val)) {
+                return val.map(v => (typeof v === 'string' ? { name: v } : v));
+            }
+            return [{ name: String(val) }];
+
+        /* Linked records (array of record IDs) */
+        case 'multipleRecordLinks':
+            return Array.isArray(val) ? val : [];
+
+        /* Single collaborator (user) */
+        case 'singleCollaborator':
+            return typeof val === 'string' ? { id: val } : val;
+
+        /* Multiple collaborators */
+        case 'multipleCollaborators':
+            return Array.isArray(val) ? val.map(id => ({ id })) : [];
+
+        /* Checkbox */
+        case 'checkbox':
+            return Boolean(val);
+
+        /* Number-based fields */
+        case 'number':
+        case 'percent':
+        case 'currency':
+            return Number(val) || 0;
+
+        /* Date/time fields – convert Date → ISO string */
+        case 'date':
+        case 'dateTime':
+            return val instanceof Date ? val.toISOString() : val;
+
+        default:
+            // For attachments, formulas, rollups, etc., pass through
+            return val;
+    }
+};
+
+/**
+ * Wrap a record payload so that every field value is formatted 
+ * according to the Results-table’s schema before sending.
+ */
+let resultsFieldTypes; // will be assigned in sync()
+const adaptForResults = rec => {
+    const out = { ...rec, fields: { ...rec.fields } };
+    for (const [fieldName, value] of Object.entries(out.fields)) {
+        const t = resultsFieldTypes.get(fieldName);
+        out.fields[fieldName] = formatForFieldType(value, t);
+    }
+    return out;
+};
+
 /* ========== MAIN SYNC ========== */
 const sync = async () => {
     const resultsTable = base.getTable('Results');
@@ -185,6 +278,11 @@ const sync = async () => {
         resRecords.records.map(r => [r.getCellValue('-Source Record ID-'), r])
     );
     console.log(`Cached ${resRecords.records.length} rows from 'Results'`);
+
+    /* --- map Results field names → field types --- */
+    resultsFieldTypes = new Map(
+        resultsTable.fields.map(f => [f.name, f.type])
+    );
 
     /* --- aggregate diffs --- */
     let createPayload          = [];
@@ -208,7 +306,7 @@ const sync = async () => {
         /* active rows must have Destroyed? = false */
         toUpdate.forEach(r => { r.fields[DESTROYED_FIELD] = false; });
 
-        /* handle refreshes */
+        /* handle refreshes: mark old as destroyed, then create new */
         refreshDestroyUpdates = refreshDestroyUpdates.concat(
             toRefresh.map(r => ({
                 id: r.id,
@@ -219,7 +317,7 @@ const sync = async () => {
             toRefresh.map(r => ({ fields: r.fields }))
         );
 
-        /* accumulate */
+        /* accumulate create & update */
         createPayload  = createPayload.concat(toCreate);
         updatePayload  = updatePayload.concat(toUpdate);
         seenSourceIds  = new Set([...seenSourceIds, ...seenIds]);
@@ -237,19 +335,27 @@ const sync = async () => {
             !r.getCellValue(DESTROYED_FIELD)
         )
         .map(r => ({ id: r.id, fields: { [DESTROYED_FIELD]: true } }));
-console.log(updatePayload);
+
+    console.log(updatePayload);
+
+    /* ========== FORMAT ALL PENDING RECORDS FOR Results TABLE ========== */
+    createPayload         = createPayload.map(adaptForResults);
+    updatePayload         = updatePayload.map(adaptForResults);
+    refreshDestroyUpdates = refreshDestroyUpdates.map(adaptForResults);
+    const obsoleteFormatted = obsoleteUpdates.map(adaptForResults);
+
     /* --- batched writes --- */
     await batchOperate(batch => resultsTable.createRecordsAsync(batch), createPayload);
     await batchOperate(batch => resultsTable.updateRecordsAsync(batch), updatePayload);
     await batchOperate(batch => resultsTable.updateRecordsAsync(batch), refreshDestroyUpdates);
-    await batchOperate(batch => resultsTable.updateRecordsAsync(batch), obsoleteUpdates);
+    await batchOperate(batch => resultsTable.updateRecordsAsync(batch), obsoleteFormatted);
 
     /* --- summary --- */
     console.log(
         `Summary – created ${createPayload.length}, ` +
         `updated ${updatePayload.length}, ` +
         `refresh-destroyed ${refreshDestroyUpdates.length}, ` +
-        `obsolete-destroyed ${obsoleteUpdates.length}`
+        `obsolete-destroyed ${obsoleteFormatted.length}`
     );
 };
 
