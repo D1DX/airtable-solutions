@@ -1,5 +1,5 @@
 /***********************************************************************
- * Airtable Multi-Table ➜ Results synchroniser   •   v2.5 (2025-06-02)
+ * Airtable Multi-Table ➜ Results synchroniser   •   v2.6 (2025-06-05)
  * --------------------------------------------------------------------
  * Mirrors records from every table in the base (except excluded ones)
  * into a single “Results” table.
@@ -104,7 +104,7 @@ const extractFieldValue = v => {
 const hasFieldChanged = (src, tgt, field) => {
   const srcVal = extractFieldValue(src.getCellValue(field)) || "";
   const tgtVal = extractFieldValue(tgt.getCellValue(field)) || "";
-  return srcVal !== tgtVal;
+  return ("" + srcVal).split("T")[0] !== ("" + tgtVal).split("T")[0];
 };
 
 /**
@@ -175,20 +175,17 @@ const prepareTableDiff = (srcRecs, existingMap, schemaFields) => {
     const seenIds   = new Set();
 
     srcRecs.forEach(src => {
-        const resRec = existingMap.get(src.id);
-        if (resRec) {
-            const { mustRefresh, anyChange, record } =
-                compareWithExisting(src, resRec, schemaFields);
-            if (mustRefresh) {
-                toRefresh.push(record);
-            } else if (anyChange) {
-                toUpdate.push(record);
-            }
-        } else {
-            toCreate.push({ fields: buildFieldsObject(schemaFields, src) });
-        }
-        seenIds.add(src.id);
-    });
+  const existing = existingMap.get(src.id);
+  console.log(
+    `Looking up source ID ${src.id} in existingMap →`,
+    existing ? 'FOUND a Results row ' + existing.id : 'NO MATCH'
+  );
+  if (existing) {
+    // ...
+  } else {
+    toCreate.push({ fields: buildFieldsObject(schemaFields, src) });
+  }
+});
 
     return { toCreate, toUpdate, toRefresh, seenIds };
 };
