@@ -24,19 +24,20 @@
  **********************************************************************/
 
 /* ========== CONFIG ========== */
-const token                = input.secret('token');
-const REFRESH_FIELDS       = ['Status', 'Users'];      // key, high-impact
-const TABLES_TO_NOT_SYNC   = ['Results', 'Settings'];  // always skip
-const DESTROYED_FIELD      = 'Destroyed?';
-const BATCH_SIZE           = 50;
+const token = input.secret('token');
+const REFRESH_FIELDS = ['Status', 'Users']; // key, high-impact
+const TABLES_TO_NOT_SYNC = ['Results', 'Settings']; // always skip
+const DESTROYED_FIELD = 'Destroyed?';
+const BATCH_SIZE = 50;
 
 /* merge hard-coded and runtime exclusions */
-const cfg              = input.config();
-const nonSyncedTables  = new Set(
+const cfg = input.config();
+const nonSyncedTables = new Set(
     [...TABLES_TO_NOT_SYNC, ...(cfg.nonSyncedTables || '')
         .split(',')
         .map(s => s.trim())
-        .filter(Boolean)]
+        .filter(Boolean)
+    ]
 );
 console.log(`Initialised – Excluded tables: ${[...nonSyncedTables].join(', ') || 'none'}`);
 
@@ -64,13 +65,15 @@ const batchOperate = async (op, payload, size = BATCH_SIZE) => {
 /* ========== EXTERNAL API HELPERS ========== */
 const fetchBaseSchema = async baseId =>
     fetchJSON(
-        `https://api.airtable.com/v0/meta/bases/${baseId}/tables`,
-        { method: 'GET', headers: initAuthHeader(token) }
+        `https://api.airtable.com/v0/meta/bases/${baseId}/tables`, {
+            method: 'GET',
+            headers: initAuthHeader(token)
+        }
     );
 
 const fetchTableRecords = async tableId => {
     const tbl = base.getTable(tableId);
-    const rs  = await tbl.selectRecordsAsync();
+    const rs = await tbl.selectRecordsAsync();
     console.log(`Fetched ${rs.records.length} from '${tbl.name}'`);
     return rs.records;
 };
@@ -81,37 +84,62 @@ const fetchTableRecords = async tableId => {
  * Extract a simple value from Airtable cell data.
  */
 const extractFieldValue = v => {
-  if (!v) {
-    return null;
-  }
+    if (!v) {
+        return null;
+    }
 
-  // Step 2: pick label, name, url, or raw value
-  const candidate = v.label || v.name || v.url || v;
-  
-  // Step 3: if text, strip leading backslashes and trim
-  if (typeof candidate === 'string') {
-    // Remove one or more '\' characters at the start, then trim spaces
-    return candidate.replace(/^\\+/, '').trim();
-  }
+    // Step 2: pick label, name, url, or raw value
+    const candidate = v.label || v.name || v.url || v;
 
-  // Non-string values remain unchanged
-  return candidate;
+    // Step 3: if text, strip leading backslashes and trim
+    if (typeof candidate === 'string') {
+        // Remove one or more '\' characters at the start, then trim spaces
+        return candidate.replace(/^\\+/, '').trim();
+    }
+
+    // Non-string values remain unchanged
+    return candidate;
 };
 
 /**
  * Check if a particular field’s value changed between source and target.
  */
 const hasFieldChanged = (src, tgt, field) => {
-  const srcVal = extractFieldValue(src.getCellValue(field)) || "";
-  const tgtVal = extractFieldValue(tgt.getCellValue(field)) || "";
-  return ("" + srcVal).split("T")[0] !== ("" + tgtVal).split("T")[0];
+    const srcVal = extractFieldValue(src.getCellValue(field)) || "";
+    const tgtVal = extractFieldValue(tgt.getCellValue(field)) || "";
+
+    // Determine if this looks like a date/datetime string (YYYY-MM-DD or YYYY-MM-DDThh:mm:ss)
+    const isDateString = (val) =>
+        typeof val === "string" && /^\d{4}-\d{2}-\d{2}(T.*)?$/.test(val);
+
+    let normalizedSrc = srcVal;
+    let normalizedTgt = tgtVal;
+
+    // Only strip off the “T…” portion when it’s actually a date or datetime string
+    if (isDateString(srcVal) || isDateString(tgtVal)) {
+        normalizedSrc = ("" + srcVal).split("T")[0];
+        normalizedTgt = ("" + tgtVal).split("T")[0];
+    }
+
+    if (normalizedSrc !== normalizedTgt) {
+        console.log(
+            `hasFieldChanged → field: "${field}", ` +
+            `raw src: "${srcVal}", raw tgt: "${tgtVal}", ` +
+            `normalized src: "${normalizedSrc}", normalized tgt: "${normalizedTgt}"`
+        );
+        return true;
+    }
+
+    return false;
 };
 
 /**
  * Build the “fields” object for Results record based on source record.
  */
 const buildFieldsObject = (schemaFields, srcRec) => {
-    const fields = { '-Source Record ID-': srcRec.id };
+    const fields = {
+        '-Source Record ID-': srcRec.id
+    };
     schemaFields.forEach(f => {
         fields[f.name] = extractFieldValue(srcRec.getCellValue(f.name));
     });
@@ -122,26 +150,26 @@ const buildFieldsObject = (schemaFields, srcRec) => {
  * Determine if any non-key data changed or if “Destroyed?” was true.
  */
 const hasAnyDataChanged = (srcRec, resRec, schemaFields) => {
-  for (const f of schemaFields) {
-    if (hasFieldChanged(srcRec, resRec, f.name)) {
-      const oldVal = extractFieldValue(resRec.getCellValue(f.name)) || "";
-      const newVal = extractFieldValue(srcRec.getCellValue(f.name)) || "";
-      console.log(
-        `Field "${f.name}" changed: "${oldVal}" → "${newVal}"`
-      );
-      return true;
+    for (const f of schemaFields) {
+        if (hasFieldChanged(srcRec, resRec, f.name)) {
+            const oldVal = extractFieldValue(resRec.getCellValue(f.name)) || "";
+            const newVal = extractFieldValue(srcRec.getCellValue(f.name)) || "";
+            console.log(
+                `Field "${f.name}" changed: "${oldVal}" → "${newVal}"`
+            );
+            return true;
+        }
     }
-  }
 
-  const resDestroyed = resRec.getCellValue(DESTROYED_FIELD) || false;
-  if (resDestroyed) {
-    console.log(
-      `Destroyed? flag is true for Results record ID "${resRec.id}" (will be “un-destroyed”)`
-    );
-    return true;
-  }
+    const resDestroyed = resRec.getCellValue(DESTROYED_FIELD) || false;
+    if (resDestroyed) {
+        console.log(
+            `Destroyed? flag is true for Results record ID "${resRec.id}" (will be “un-destroyed”)`
+        );
+        return true;
+    }
 
-  return false;
+    return false;
 };
 
 /**
@@ -151,9 +179,10 @@ const compareWithExisting = (srcRec, resRec, schemaFields) => {
     const mustRefresh = REFRESH_FIELDS.some(f =>
         schemaFields.some(sf => sf.name === f) && hasFieldChanged(srcRec, resRec, f)
     );
-    const anyChange = mustRefresh
-        ? true                     // already know key field differs
-        : hasAnyDataChanged(srcRec, resRec, schemaFields);
+    const anyChange = mustRefresh ?
+        true // already know key field differs
+        :
+        hasAnyDataChanged(srcRec, resRec, schemaFields);
     return {
         mustRefresh,
         anyChange,
@@ -169,26 +198,43 @@ const compareWithExisting = (srcRec, resRec, schemaFields) => {
  * based on diff between source and existing Results.
  */
 const prepareTableDiff = (srcRecs, existingMap, schemaFields) => {
-    const toCreate  = [];
-    const toUpdate  = [];
+    const toCreate = [];
+    const toUpdate = [];
     const toRefresh = [];
-    const seenIds   = new Set();
+    const seenIds = new Set();
 
-   srcRecs.forEach(src => {
-     const existing = existingMap.get(src.id);
-     console.log(
-       `Looking up source ID ${src.id} in existingMap →`,
-       existing ? 'FOUND a Results row ' + existing.id : 'NO MATCH'
-     );
-     if (existing) {
-       // … (update/refresh logic)
-     } else {
-       toCreate.push({ fields: buildFieldsObject(schemaFields, src) });
-     }
-+    seenIds.add(src.id);
-   });
+    srcRecs.forEach(src => {
+        const existing = existingMap.get(src.id);
+        console.log(
+            `Looking up source ID ${src.id} in existingMap →`,
+            existing ? 'FOUND a Results row ' + existing.id : 'NO MATCH'
+        );
+        if (existing) {
+            // Call compareWithExisting to detect field changes:
+            const {
+                mustRefresh,
+                anyChange,
+                record
+            } = compareWithExisting(src, existing, schemaFields);
+            if (mustRefresh) {
+                toRefresh.push(record);
+            } else if (anyChange) {
+                toUpdate.push(record);
+            }
+        } else {
+            toCreate.push({
+                fields: buildFieldsObject(schemaFields, src)
+            });
+        }
+        seenIds.add(src.id);
+    });
 
-    return { toCreate, toUpdate, toRefresh, seenIds };
+    return {
+        toCreate,
+        toUpdate,
+        toRefresh,
+        seenIds
+    };
 };
 
 /* ========== TYPE-FORMATTING HELPERS ========== */
@@ -207,40 +253,50 @@ const formatForFieldType = (val, type) => {
         case 'multilineText':
             return String(val);
 
-        /* Single select */
+            /* Single select */
         case 'singleSelect':
-            return typeof val === 'string' ? { name: val } : val;
+            return typeof val === 'string' ? {
+                name: val
+            } : val;
 
-        /* Multiple select */
+            /* Multiple select */
         case 'multipleSelects':
             if (Array.isArray(val)) {
-                return val.map(v => (typeof v === 'string' ? { name: v } : v));
+                return val.map(v => (typeof v === 'string' ? {
+                    name: v
+                } : v));
             }
-            return [{ name: String(val) }];
+            return [{
+                name: String(val)
+            }];
 
-        /* Linked records (array of record IDs) */
+            /* Linked records (array of record IDs) */
         case 'multipleRecordLinks':
             return Array.isArray(val) ? val : [];
 
-        /* Single collaborator (user) */
+            /* Single collaborator (user) */
         case 'singleCollaborator':
-            return typeof val === 'string' ? { id: val } : val;
+            return typeof val === 'string' ? {
+                id: val
+            } : val;
 
-        /* Multiple collaborators */
+            /* Multiple collaborators */
         case 'multipleCollaborators':
-            return Array.isArray(val) ? val.map(id => ({ id })) : [];
+            return Array.isArray(val) ? val.map(id => ({
+                id
+            })) : [];
 
-        /* Checkbox */
+            /* Checkbox */
         case 'checkbox':
             return Boolean(val);
 
-        /* Number-based fields */
+            /* Number-based fields */
         case 'number':
         case 'percent':
         case 'currency':
             return Number(val) || 0;
 
-        /* Date/time fields – convert Date → ISO string */
+            /* Date/time fields – convert Date → ISO string */
         case 'date':
         case 'dateTime':
             return val instanceof Date ? val.toISOString() : val;
@@ -257,7 +313,12 @@ const formatForFieldType = (val, type) => {
  */
 let resultsFieldTypes; // will be assigned in sync()
 const adaptForResults = rec => {
-    const out = { ...rec, fields: { ...rec.fields } };
+    const out = {
+        ...rec,
+        fields: {
+            ...rec.fields
+        }
+    };
     for (const [fieldName, value] of Object.entries(out.fields)) {
         const t = resultsFieldTypes.get(fieldName);
         out.fields[fieldName] = formatForFieldType(value, t);
@@ -270,10 +331,18 @@ const sync = async () => {
     const resultsTable = base.getTable('Results');
 
     /* --- cache current Results rows --- */
-    const resRecords       = await resultsTable.selectRecordsAsync();
-    const byResultId       = new Map(resRecords.records.map(r => [r.id, r]));
+    // 1. Fetch every row from “Results”
+    const resRecords = await resultsTable.selectRecordsAsync();
+
+    // 2. Keep only rows where “Destroyed?” is false
+    const activeRows = resRecords.records.filter(row =>
+        !row.getCellValue(DESTROYED_FIELD)
+    );
+
+    // 3. Build lookup maps from activeRows only
+    const byResultId = new Map(activeRows.map(r => [r.id, r]));
     const bySourceRecordId = new Map(
-        resRecords.records.map(r => [r.getCellValue('-Source Record ID-'), r])
+        activeRows.map(r => [r.getCellValue('-Source Record ID-'), r])
     );
     console.log(`Cached ${resRecords.records.length} rows from 'Results'`);
 
@@ -283,10 +352,10 @@ const sync = async () => {
     );
 
     /* --- aggregate diffs --- */
-    let createPayload          = [];
-    let updatePayload          = [];
-    let refreshDestroyUpdates  = [];
-    let seenSourceIds          = new Set();
+    let createPayload = [];
+    let updatePayload = [];
+    let refreshDestroyUpdates = [];
+    let seenSourceIds = new Set();
 
     const schema = await fetchBaseSchema(base.id);
     console.log(`Schema contains ${schema.tables.length} tables`);
@@ -298,27 +367,38 @@ const sync = async () => {
         }
 
         const srcRecs = await fetchTableRecords(t.id);
-        const { toCreate, toUpdate, toRefresh, seenIds } =
-            prepareTableDiff(srcRecs, bySourceRecordId, t.fields);
+        const {
+            toCreate,
+            toUpdate,
+            toRefresh,
+            seenIds
+        } =
+        prepareTableDiff(srcRecs, bySourceRecordId, t.fields);
 
         /* active rows must have Destroyed? = false */
-        toUpdate.forEach(r => { r.fields[DESTROYED_FIELD] = false; });
+        toUpdate.forEach(r => {
+            r.fields[DESTROYED_FIELD] = false;
+        });
 
         /* handle refreshes: mark old as destroyed, then create new */
         refreshDestroyUpdates = refreshDestroyUpdates.concat(
             toRefresh.map(r => ({
                 id: r.id,
-                fields: { [DESTROYED_FIELD]: true }
+                fields: {
+                    [DESTROYED_FIELD]: true
+                }
             }))
         );
         createPayload = createPayload.concat(
-            toRefresh.map(r => ({ fields: r.fields }))
+            toRefresh.map(r => ({
+                fields: r.fields
+            }))
         );
 
         /* accumulate create & update */
-        createPayload  = createPayload.concat(toCreate);
-        updatePayload  = updatePayload.concat(toUpdate);
-        seenSourceIds  = new Set([...seenSourceIds, ...seenIds]);
+        createPayload = createPayload.concat(toCreate);
+        updatePayload = updatePayload.concat(toUpdate);
+        seenSourceIds = new Set([...seenSourceIds, ...seenIds]);
 
         console.log(
             `Processed '${t.name}' – create ${toCreate.length}, ` +
@@ -332,13 +412,18 @@ const sync = async () => {
             !seenSourceIds.has(r.getCellValue('-Source Record ID-')) &&
             !r.getCellValue(DESTROYED_FIELD)
         )
-        .map(r => ({ id: r.id, fields: { [DESTROYED_FIELD]: true } }));
+        .map(r => ({
+            id: r.id,
+            fields: {
+                [DESTROYED_FIELD]: true
+            }
+        }));
 
     console.log(updatePayload);
 
     /* ========== FORMAT ALL PENDING RECORDS FOR Results TABLE ========== */
-    createPayload         = createPayload.map(adaptForResults);
-    updatePayload         = updatePayload.map(adaptForResults);
+    createPayload = createPayload.map(adaptForResults);
+    updatePayload = updatePayload.map(adaptForResults);
     refreshDestroyUpdates = refreshDestroyUpdates.map(adaptForResults);
     const obsoleteFormatted = obsoleteUpdates.map(adaptForResults);
 
