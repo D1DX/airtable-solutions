@@ -1,16 +1,16 @@
 // Global Variables
-const API_KEY = 'YOUR-AIRTABLE-PAT-HERE';
+const API_KEY = '<<AIRTABLE-PAT-HERE>>';
 const WEBHOOK_ID = input.config().webhookId;
 
-const SETTINGS_TABLE_ID = 'tblSettings';
-const SETTINGS_RECORD_ID = 'recSettibgs';
-const CURSOR_FIELD_ID = 'fldCursor';
-const RESULTS_TABLE_ID = 'tblResults';
-const SOURCE_FIELD_ID = 'fldSource';
+const SETTINGS_TABLE_ID = 'tbl123123123';
+const SETTINGS_RECORD_ID = 'rec123123123';
+const CURSOR_FIELD_ID = 'fld123213123';
+const RESULTS_TABLE_ID = 'tbl123123123';
+const SOURCE_FIELD_ID = 'fld123213123';
 
 // List of table IDs to ignore
 const IGNORED_TABLE_IDS = [
-  'tableIgnored'
+  'tbl123123123'
 ];
 
 (async () => {
@@ -217,28 +217,39 @@ const IGNORED_TABLE_IDS = [
 }
 
   async function handleRecords(recordsObj, mapping, processType) {
-    for (const [recordId, recordData] of Object.entries(recordsObj)) {
-      const cellValues = extractCellValues(recordData);
-      log('DEBUG', 'Processing record', { recordId, processType, cellValues });
-      if (processType === 'create') {
-        if (!resultsCache[recordId]) {
-          const fields = Object.assign({ "-Source Record ID-": recordId }, mapFields(cellValues, mapping));
-          resultsCache[recordId] = { id: null, fields };
-          log('INFO', 'Created record in cache', { recordId, fields });
-        }
-      } else if (processType === 'update') {
-        if (resultsCache[recordId]) {
-          resultsCache[recordId].fields = mapFields(cellValues, mapping);
-          log('INFO', 'Updated record in cache', { recordId, fields: resultsCache[recordId].fields });
-        }
-      } else if (processType === 'delete') {
-        if (resultsCache[recordId]) {
-          delete resultsCache[recordId];
-          log('INFO', 'Deleted record from cache', { recordId });
-        }
+  for (const [recordId, recordData] of Object.entries(recordsObj)) {
+    const cellValues = extractCellValues(recordData);
+    log('DEBUG', 'Processing record', { recordId, processType, cellValues });
+
+    if (processType === 'create') {
+      if (!resultsCache[recordId]) {
+        const fields = Object.assign({ "-Source Record ID-": recordId }, mapFields(cellValues, mapping));
+        resultsCache[recordId] = { id: null, fields };
+        log('INFO', 'Created record in cache', { recordId, fields });
+      }
+
+    } else if (processType === 'update') {
+      if (resultsCache[recordId]) {
+        const updatedFields = mapFields(cellValues, mapping);
+        // merge all existing fields with updates to ensure a full field set
+        resultsCache[recordId].fields = {
+          ...resultsCache[recordId].fields,
+          ...updatedFields
+        };
+        log('INFO', 'Updated record in cache', {
+          recordId,
+          fields: resultsCache[recordId].fields
+        });
+      }
+
+    } else if (processType === 'delete') {
+      if (resultsCache[recordId]) {
+        delete resultsCache[recordId];
+        log('INFO', 'Deleted record from cache', { recordId });
       }
     }
   }
+}
 
   function mapFields(fields, mapping) {
     return Object.entries(fields).reduce((data, [fieldId, value]) => {
@@ -275,7 +286,7 @@ const IGNORED_TABLE_IDS = [
     if (!payloadsData || !payloadsData.payloads) {
       log('ERROR', 'No payloads returned');
       break;
-    }
+    } 
     if (payloadsData.payloads.length === 0) {
       // No payloads returned, exit loop immediately.
       mightHaveMore = false;
