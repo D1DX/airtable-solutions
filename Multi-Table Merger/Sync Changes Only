@@ -1,17 +1,24 @@
+/*
+Multi-Table Merger / Sync Changes Only
+V3.4
+*/
+
 // Global Variables
-const API_KEY = '<<AIRTABLE-PAT-HERE>>';
+const API_KEY = input.secret('PAT');
 const WEBHOOK_ID = input.config().webhookId;
 
-const SETTINGS_TABLE_ID = 'tbl123123123';
-const SETTINGS_RECORD_ID = 'rec123123123';
-const CURSOR_FIELD_ID = 'fld123213123';
-const RESULTS_TABLE_ID = 'tbl123123123';
-const SOURCE_FIELD_ID = 'fld123213123';
+const SETTINGS_TABLE_ID = 'tbl123';
+const SETTINGS_RECORD_ID = 'tbl234';
+const CURSOR_FIELD_ID = 'fld123';
+const RESULTS_TABLE_ID = 'fld234';
+const SOURCE_FIELD_ID = 'fld345';
 
 // List of table IDs to ignore
 const IGNORED_TABLE_IDS = [
-  'tbl123123123'
+  'tbl345'
 ];
+
+const RECREATE_TRIGGER_FIELDS = ['Field1', 'Field2'];
 
 (async () => {
   // Unified logging function for uniform output
@@ -126,47 +133,58 @@ const IGNORED_TABLE_IDS = [
   }
 
   // --- Diff and Commit Functions ---
-  async function commitChanges() {
-    const resultsTable = base.getTable(RESULTS_TABLE_ID);
-    const createBatch = [];
-    const updateBatch = [];
-    const deleteBatch = [];
+async function commitChanges() {
+  const resultsTable = base.getTable(RESULTS_TABLE_ID);
+  const createBatch = [];
+  const updateBatch = [];
+  const deleteBatch = [];
 
-    // Diff current (final) cache with initial cache
-    for (const sourceId in resultsCache) {
-      if (initialCache[sourceId]) {
-        // Check for field differences
-        if (JSON.stringify(resultsCache[sourceId].fields) !== JSON.stringify(initialCache[sourceId].fields)) {
-          updateBatch.push({ id: resultsCache[sourceId].id, fields: resultsCache[sourceId].fields });
+  for (const sourceId in resultsCache) {
+    if (initialCache[sourceId]) {
+      const oldFields = initialCache[sourceId].fields;
+      const newFields = resultsCache[sourceId].fields;
+
+      if (JSON.stringify(newFields) !== JSON.stringify(oldFields)) {
+        const usersChanged = oldFields[USERS_FIELD_NAME] !== newFields[USERS_FIELD_NAME];
+
+        if (usersChanged) {
+          // Users changed – delete the old row and queue a brand-new one
+          deleteBatch.push(initialCache[sourceId].id);
+          createBatch.push({
+            fields: Object.assign({ '-Source Record ID-': sourceId }, newFields)
+          });
+        } else {
+          // Normal field update
+          updateBatch.push({ id: resultsCache[sourceId].id, fields: newFields });
         }
-        delete initialCache[sourceId]; // Mark as processed
-      } else {
-        // New record detected
-        createBatch.push({ fields: Object.assign({ "-Source Record ID-": sourceId }, resultsCache[sourceId].fields) });
       }
+      delete initialCache[sourceId];  // mark as processed
+    } else {
+      // Brand-new source record
+      createBatch.push({
+        fields: Object.assign({ '-Source Record ID-': sourceId }, resultsCache[sourceId].fields)
+      });
     }
-    // Any records remaining in initialCache are to be deleted.
-    for (const sourceId in initialCache) {
-      deleteBatch.push(initialCache[sourceId].id);
-    }
-
-    // Log snapshots of the arrays before processing
-    log('DEBUG', 'Create Batch Snapshot', JSON.parse(JSON.stringify(createBatch)));
-    log('DEBUG', 'Update Batch Snapshot', JSON.parse(JSON.stringify(updateBatch)));
-    log('DEBUG', 'Delete Batch Snapshot', JSON.parse(JSON.stringify(deleteBatch)));
-
-    // Execute API batch operations.
-    await Promise.all([
-      processBatch(createBatch, async (batch) => await resultsTable.createRecordsAsync(batch)),
-      processBatch(updateBatch, async (batch) => await resultsTable.updateRecordsAsync(batch)),
-      processBatch(deleteBatch, async (batch) => await resultsTable.deleteRecordsAsync(batch))
-    ]);
-    log('INFO', 'Committed changes to Results table', {
-      created: createBatch.length,
-      updated: updateBatch.length,
-      deleted: deleteBatch.length
-    });
   }
+
+  // Anything left in initialCache must be deleted
+  for (const sourceId in initialCache) {
+    deleteBatch.push(initialCache[sourceId].id);
+  }
+
+  // Execute the batched operations (unchanged)
+  await Promise.all([
+    processBatch(createBatch, async b => resultsTable.createRecordsAsync(b)),
+    processBatch(updateBatch, async b => resultsTable.updateRecordsAsync(b)),
+    processBatch(deleteBatch, async b => resultsTable.deleteRecordsAsync(b))
+  ]);
+
+  log('INFO', 'Committed changes to Results table', {
+    created: createBatch.length,
+    updated: updateBatch.length,
+    deleted: deleteBatch.length
+  });
+}
 
   // --- Webhook Payload Processing ---
  async function processPayload(payload, baseSchema) {
