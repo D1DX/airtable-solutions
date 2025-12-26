@@ -1,42 +1,40 @@
 /**************************************************************************
-*  Webhook Payload Processor with Recreate-on-Field-Change Logic  v3.5
-*  – Every function now logs its inputs and outputs for full traceability
+* Webhook Payload Processor - version 3.6 Name-Based Version
 **************************************************************************/
 
 /*────────────────────────── Globals ──────────────────────────*/
 const API_KEY          = input.secret('PAT');
 const WEBHOOK_ID       = input.config().webhookId;
 
-const SETTINGS_TABLE_ID = 'tbl123';
-const SETTINGS_RECORD_ID = 'rec123';
-const CURSOR_FIELD_ID    = 'fld123';
+// Changed from IDs to Names
+const SETTINGS_TABLE_NAME = 'Settings';
+const SETTINGS_RECORD_NAME = 'Cursor'; // The value in the 'Name' field
+const CURSOR_FIELD_NAME    = 'Value';
 
-const RESULTS_TABLE_ID   = 'tbl234';
-const SOURCE_FIELD_ID    = 'fld234';
+const RESULTS_TABLE_NAME   = 'Results';
+const SOURCE_FIELD_NAME    = '-Synced Record ID-'; // Updated per ERD
 
 /* tables that never participate */
-const IGNORED_TABLE_IDS  = ['tbl345'];
+const IGNORED_TABLE_NAMES  = []; 
 
 /* When ANY of these field names change → delete+create instead of update */
-const RECREATE_TRIGGER_FIELDS = ['Field1', 'Field2'];
+const RECREATE_TRIGGER_FIELDS = [];
 
 /* In-memory stores */
-let resultsCache       = {};   // { sourceId: { id, fields } }
-let initialCache       = {};   // deep clone of resultsCache at load
-let sourceRecordsCache = {};   // { recordId: { tableId, cellValuesByFieldId } }
+let resultsCache       = {};   
+let initialCache       = {};   
+let sourceRecordsCache = {};   
 let GLOBAL_BASE_SCHEMA = null;
 
 /*───────────────────────── Helpers ──────────────────────────*/
 const log = (level, msg, data = {}) =>
   console.log(`[${new Date().toISOString()}] [${level}] ${msg}: ${JSON.stringify(data, null, 2)}`);
 
-/* I/O-trace helper */
 const traceIn  = (fn, args) => log('TRACE', `${fn} → in`,  args);
 const traceOut = (fn, out)  => log('TRACE', `${fn} → out`, out);
 
 const extractFieldValue = v => v?.name ?? v?.url ?? v ?? null;
 
-/* Build {fieldId: value} for one record */
 function buildCellValuesByFieldId(record, tableMeta) {
   const out = {};
   for (const f of tableMeta.fields) out[f.id] = record.getCellValue(f.id);
@@ -55,19 +53,14 @@ async function fetchPayloads(webhookId, cursor) {
     );
     if (!res.ok) throw new Error(res.statusText);
     output = await res.json();
-    if (!output.payloads?.length) {
-      output = { payloads: [], mightHaveMore: false, cursor };
-    }
   } catch (err) {
     log('ERROR', 'fetchPayloads', { message: err.message });
     output = null;
   }
-  traceOut('fetchPayloads', { payloads: output?.payloads?.length ?? null, mightHaveMore: output?.mightHaveMore });
   return output;
 }
 
 async function getBaseSchema() {
-  traceIn('getBaseSchema', {});
   let tables;
   try {
     const res = await fetch(
@@ -78,20 +71,23 @@ async function getBaseSchema() {
     tables = (await res.json()).tables;
   } catch (err) {
     log('ERROR', 'getBaseSchema', { message: err.message });
-    tables = null;
   }
-  traceOut('getBaseSchema', { tableCount: tables?.length ?? null });
   return tables;
 }
 
 /*──────────────────── Settings table cursor ──────────────────*/
+async function getSettingsRecord() {
+    const tbl = base.getTable(SETTINGS_TABLE_NAME);
+    const query = await tbl.selectRecordsAsync({fields: ['Name', CURSOR_FIELD_NAME]});
+    return query.records.find(r => r.getCellValue('Name') === SETTINGS_RECORD_NAME);
+}
+
 async function getCursor() {
   traceIn('getCursor', {});
   let cursor = null;
   try {
-    const tbl = base.getTable(SETTINGS_TABLE_ID);
-    const rec = await tbl.selectRecordAsync(SETTINGS_RECORD_ID);
-    cursor = rec.getCellValue(CURSOR_FIELD_ID) || null;
+    const rec = await getSettingsRecord();
+    cursor = rec ? rec.getCellValue(CURSOR_FIELD_NAME) : null;
   } catch (err) {
     log('ERROR', 'getCursor', { message: err.message });
   }
@@ -100,45 +96,36 @@ async function getCursor() {
 }
 
 async function updateCursor(prevCursor) {
-  traceIn('updateCursor', { prevCursor });
   try {
-    const tbl = base.getTable(SETTINGS_TABLE_ID);
-    await tbl.updateRecordAsync(SETTINGS_RECORD_ID, {
-      [CURSOR_FIELD_ID]: prevCursor + 1,
-    });
+    const tbl = base.getTable(SETTINGS_TABLE_NAME);
+    const rec = await getSettingsRecord();
+    if (rec) {
+        await tbl.updateRecordAsync(rec.id, {
+            [CURSOR_FIELD_NAME]: String(prevCursor + 1),
+        });
+    }
   } catch (err) {
     log('ERROR', 'updateCursor', { message: err.message });
   }
-  traceOut('updateCursor', {});
 }
 
 /*────────────────── Results table cache load ─────────────────*/
 async function loadResultsCache() {
   traceIn('loadResultsCache', {});
-  const tbl = base.getTable(RESULTS_TABLE_ID);
+  const tbl = base.getTable(RESULTS_TABLE_NAME);
   const q   = await tbl.selectRecordsAsync();
   q.records.forEach(r => {
-    const sid = r.getCellValue(SOURCE_FIELD_ID);
+    const sid = r.getCellValue(SOURCE_FIELD_NAME);
     if (sid) resultsCache[sid] = { id: r.id, fields: r.fields };
   });
   initialCache = JSON.parse(JSON.stringify(resultsCache));
-  traceOut('loadResultsCache', { recordCount: Object.keys(resultsCache).length });
 }
 
-/**************************************************************************
-*  loadSourceCache
-*  -----------------------------------------------------------------------
-*  Inputs : baseSchema  – the array of table metadata objects
-*  Outputs: populates global `sourceRecordsCache`
-*           { recordId: { tableId, cellValuesByFieldId } }
-**************************************************************************/
 async function loadSourceCache(baseSchema) {
-  traceIn('loadSourceCache', { tables: baseSchema.length });
-
   for (const tblMeta of baseSchema) {
-    if (IGNORED_TABLE_IDS.includes(tblMeta.id)) continue;
+    if (IGNORED_TABLE_NAMES.includes(tblMeta.name)) continue;
 
-    const tableObj = base.getTable(tblMeta.id);
+    const tableObj = base.getTable(tblMeta.name);
     const query    = await tableObj.selectRecordsAsync();
 
     query.records.forEach(rec => {
@@ -148,61 +135,38 @@ async function loadSourceCache(baseSchema) {
       };
     });
   }
-  traceOut('loadSourceCache', { cachedRecords: Object.keys(sourceRecordsCache).length });
 }
 
 /*──────────────── Utility: non-destructive batching ──────────*/
 async function processBatch(batch, fn) {
-  traceIn('processBatch', { batchLength: batch.length });
   for (let idx = 0; idx < batch.length; idx += 10) {
     const slice = batch.slice(idx, idx + 10);
-    if (!slice.length) break;
-    log('DEBUG', 'Processing batch slice', { batchSize: slice.length });
-    await fn(slice);
+    if (slice.length) await fn(slice);
   }
-  traceOut('processBatch', {});
 }
 
-/*──────────────── Map helpers ────────────────────────────────*/
 function mapFields(fieldsById, mapping) {
-  traceIn('mapFields', { fieldCount: Object.keys(fieldsById).length });
-  const mapped = Object.entries(fieldsById).reduce((out, [fid, val]) => {
+  return Object.entries(fieldsById).reduce((out, [fid, val]) => {
     const name = mapping[fid];
     if (name) out[name] = extractFieldValue(val);
     return out;
   }, {});
-  traceOut('mapFields', { mappedCount: Object.keys(mapped).length });
-  return mapped;
 }
 
-
-/*──────────────── getFullRecordFields ─────────────*/
 async function getFullRecordFields(tableId, recordId, mapping) {
-  traceIn('getFullRecordFields', { tableId, recordId });
-
-  // 1) snapshot cache
   let cells = sourceRecordsCache[recordId]?.cellValuesByFieldId;
-
-  // 2) live fetch if missing
   if (!cells) {
     const tblMeta = GLOBAL_BASE_SCHEMA.find(t => t.id === tableId);
-    if (!tblMeta) { traceOut('getFullRecordFields', { found: false }); return {}; }
-
-    const rec = await base.getTable(tableId).selectRecordAsync(recordId);
-    if (!rec)    { traceOut('getFullRecordFields', { found: false }); return {}; }
-
+    if (!tblMeta) return {};
+    const rec = await base.getTable(tblMeta.name).selectRecordAsync(recordId);
+    if (!rec) return {};
     cells = buildCellValuesByFieldId(rec, tblMeta);
     sourceRecordsCache[recordId] = { tableId, cellValuesByFieldId: cells };
   }
-
-  const out = mapFields(cells, mapping);
-  traceOut('getFullRecordFields', { fieldCount: Object.keys(out).length });
-  return out;
+  return mapFields(cells, mapping);
 }
 
-/*──────────────── Record-level handler ───────────────────────*/
 async function handleRecords(recordsObj, mapping, processType, tableId) {
-  traceIn('handleRecords', { processType, recordCount: Object.keys(recordsObj).length });
   for (const [recId] of Object.entries(recordsObj)) {
     if (processType === 'delete') {
       if (resultsCache[recId]) delete resultsCache[recId];
@@ -217,16 +181,13 @@ async function handleRecords(recordsObj, mapping, processType, tableId) {
       resultsCache[recId].fields = fullFields;
     }
   }
-  traceOut('handleRecords', {});
 }
 
-/*──────────────── Payload processor ──────────────────────────*/
 async function processPayload(payload, baseSchema) {
-  traceIn('processPayload', { ts: payload.timestamp });
   for (const [tableId, tblChanges] of Object.entries(payload.changedTablesById)) {
-    if (IGNORED_TABLE_IDS.includes(tableId)) continue;
     const meta = baseSchema.find(t => t.id === tableId);
-    if (!meta) continue;
+    if (!meta || IGNORED_TABLE_NAMES.includes(meta.name)) continue;
+    
     const mapping = Object.fromEntries(meta.fields.map(f => [f.id, f.name]));
     if (tblChanges.createdRecordsById)
       await handleRecords(tblChanges.createdRecordsById, mapping, 'create', tableId);
@@ -237,16 +198,10 @@ async function processPayload(payload, baseSchema) {
       await handleRecords(del, mapping, 'delete', tableId);
     }
   }
-  traceOut('processPayload', {});
 }
 
-/*──────────────── Commit diff to Results table ───────────────*/
 async function commitChanges() {
-  traceIn('commitChanges', {
-    resultsCache: Object.keys(resultsCache).length,
-    initialCache: Object.keys(initialCache).length
-  });
-  const tbl = base.getTable(RESULTS_TABLE_ID);
+  const tbl = base.getTable(RESULTS_TABLE_NAME);
   const createBatch = [], updateBatch = [], deleteBatch = [];
 
   for (const srcId in resultsCache) {
@@ -259,40 +214,33 @@ async function commitChanges() {
         const mustRecreate = RECREATE_TRIGGER_FIELDS.some(f => oldFields[f] !== newFields[f]);
         if (mustRecreate) {
           deleteBatch.push(existed.id);
-          createBatch.push({ fields: { '-Source Record ID-': srcId, ...newFields } });
+          createBatch.push({ fields: { [SOURCE_FIELD_NAME]: srcId, ...newFields } });
         } else {
           updateBatch.push({ id: resultsCache[srcId].id, fields: newFields });
         }
       }
       delete initialCache[srcId];
     } else {
-      createBatch.push({ fields: { '-Source Record ID-': srcId, ...newFields } });
+      createBatch.push({ fields: { [SOURCE_FIELD_NAME]: srcId, ...newFields } });
     }
   }
   for (const srcId in initialCache) deleteBatch.push(initialCache[srcId].id);
-
-  const createdCount = createBatch.length, updatedCount = updateBatch.length, deletedCount = deleteBatch.length;
 
   await Promise.all([
     processBatch(createBatch, async b => tbl.createRecordsAsync(b)),
     processBatch(updateBatch, async b => tbl.updateRecordsAsync(b)),
     processBatch(deleteBatch, async b => tbl.deleteRecordsAsync(b)),
   ]);
-
-  traceOut('commitChanges', { createdCount, updatedCount, deletedCount });
 }
 
-/*──────────────── Cursor math helper ─────────────────────────*/
 const calculatePayloadCursor = (baseCursor, len, idx) => baseCursor - (len - idx);
 
 /*────────────────────────── Main ─────────────────────────────*/
 (async () => {
-  traceIn('MAIN', {});
   const baseSchema = await getBaseSchema();
-  if (!baseSchema) { output.set('mightHaveMore', false); return; }
+  if (!baseSchema) return;
 
   GLOBAL_BASE_SCHEMA = baseSchema; 
-
   await loadSourceCache(baseSchema);
   await loadResultsCache();
 
@@ -302,7 +250,7 @@ const calculatePayloadCursor = (baseCursor, len, idx) => baseCursor - (len - idx
   while (cycle < 30) {
     cycle++;
     const data = await fetchPayloads(WEBHOOK_ID, cursor);
-    if (!data || !data.payloads.length) break;
+    if (!data || !data.payloads || !data.payloads.length) break;
     processed = true;
     const len = data.payloads.length;
     for (const [idx, payload] of data.payloads.entries()) {
@@ -317,5 +265,4 @@ const calculatePayloadCursor = (baseCursor, len, idx) => baseCursor - (len - idx
 
   if (processed) await commitChanges();
   output.set('mightHaveMore', mightHaveMore);
-  traceOut('MAIN', { cycles: cycle, processed });
 })();
