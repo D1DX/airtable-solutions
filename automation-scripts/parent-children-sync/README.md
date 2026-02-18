@@ -15,20 +15,19 @@ Airtable has updated their platform. When creating a linked record field to the 
 
 ## Usage
 
-Interactive extension scripts that manage hierarchical table relationships.
+Automation scripts that manage hierarchical table relationships. Triggered by an Airtable automation.
 
 ## Setup
 
-1. Create an Airtable extension in your base
-2. Copy desired script from `src/` folder
-3. Paste into extension code editor
-4. Configure table and field mappings
-5. Run the extension
+1. Copy the desired script from `src/` folder
+2. Create an automation in Airtable
+3. Add "Run a script" action
+4. Paste the code
+5. Configure input variables: `table`, `source`, `dest` (and `record` for sync-record.js)
 
-## Features
+## Parameters
 
-- Bidirectional relationship maintenance
-- Automatic parent-child linking
-- Single record or bulk sync options
-- Preserves data integrity
-
+- `table` - Table ID
+- `source` - Source linked record field name
+- `dest` - Destination linked record field name
+- `record` (sync-record.js only) - Record ID to sync
