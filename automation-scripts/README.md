@@ -8,12 +8,13 @@ JavaScript scripts for Airtable automation actions.
 
 - [Sleep](./sleep/) - Controlled delays with validation
 - [Get Favicon from URL](./get-favicon-from-url/) - Fetch website favicons
-- [Get Select Options with IDs](./get-select-options-with-ids/) - Extract select field options
 - [Send HTTP Request](./send-http-request/) - Send webhooks with retry
 - [Merge Duplicates](./merge-duplicates/) - Merge duplicate records
 - [Merge Flat Arrays](./merge-flat-arrays/) - Combine arrays into objects
-- [Compose ERD](./compose-erd/) - Generate ERD diagrams
 - [HTML Table to TOON](./html-table-to-toon/) - Convert HTML tables
+- [Parent-Children Sync](./parent-children-sync/) - Maintain bidirectional relationships
+- [Record Exists Checker](./record-exists-checker/) - Validate record presence
+- [Multi-Table Merger](./multi-table-merger/) - Incremental webhook-based sync
 
 ## Setup
 

@@ -11,17 +11,15 @@ Interactive script with user prompts for table, field, and output format selecti
 ## Setup
 
 1. Copy `src/get-select-options.js`
-2. Create automation in Airtable
-3. Add "Run a script" action
-4. Paste the code
-5. Run - script will prompt for:
+2. Create an Airtable extension in your base
+3. Paste into extension code editor
+4. Run - script will prompt for:
    - Table with select field
    - Select field
    - Output format (list, table, or comma-separated)
 
 ## Output Formats
 
-- **List** - Markdown formatted name and ID pairs
-- **Table** - Structured table view
-- **Comma Separated** - CSV-style output
-
+- List - Markdown formatted name and ID pairs
+- Table - Structured table view
+- Comma Separated - CSV-style output

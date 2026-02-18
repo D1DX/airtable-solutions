@@ -6,7 +6,7 @@ Collection of Airtable automation scripts, extension scripts, formulas, and form
 
 ## Contents
 
-- [Automation Scripts](./automation-scripts/) - 8 solutions
+- [Automation Scripts](./automation-scripts/) - 9 solutions
 - [Extension Scripts](./extension-scripts/) - 5 solutions
 - [Formulas](./formulas/) - 2 solutions
 - [Formula Builders](./formula-building-scripts/) - 2 solutions
