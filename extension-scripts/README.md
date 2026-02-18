@@ -7,10 +7,10 @@ Scripts designed to run as Airtable extensions.
 ## Solutions
 
 - [Webhooks API](./webhooks-api/) - Complete webhook lifecycle management
-- [Parent-Children Sync](./parent-children-sync/) - Maintain bidirectional relationships
-- [Multi-Table Merger](./multi-table-merger/) - Synchronize records across tables
+- [Multi-Table Merger](./multi-table-merger/) - Full initial sync across tables
 - [SelectCase Formatter](./selectcase-formatter/) - Reformat select field options
-- [Record Exists Checker](./record-exists-checker/) - Validate record presence
+- [Get Select Options with IDs](./get-select-options-with-ids/) - Extract select field options
+- [Compose ERD](./compose-erd/) - Generate ERD diagrams
 
 ## Setup
 

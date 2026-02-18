@@ -11,10 +11,9 @@ Interactive script that analyzes base schema and creates ERD visualization.
 ## Setup
 
 1. Copy `src/compose-erd.js`
-2. Create automation in Airtable
-3. Add "Run a script" action
-4. Paste the code
-5. Run to generate ERD
+2. Create an Airtable extension in your base
+3. Paste into extension code editor
+4. Run to generate ERD
 
 ## Output
 
@@ -27,4 +26,3 @@ Interactive script that analyzes base schema and creates ERD visualization.
 - Documenting base architecture
 - Understanding complex relationships
 - Planning schema changes
-
