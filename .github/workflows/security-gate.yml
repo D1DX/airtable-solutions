@@ -1,0 +1,26 @@
+name: Security Gate
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - name: Run CI guard
+        run: python3 scripts/ci-guard.py
+      - name: Run doctor (non-invasive)
+        run: ./scripts/doctor.sh
+      - name: Run shell syntax tests
+        run: ./scripts/test-shell-syntax.sh
+      - name: Run runtime parity tests
+        run: ./scripts/test-runtime-parity.sh
+      - name: Run workflow contract tests
+        run: ./scripts/test-workflow-contract.sh

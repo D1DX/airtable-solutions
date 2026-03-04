@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "repo": {
+    "slug": "airtable-solutions",
+    "name": "Airtable Solutions",
+    "profile": "service-repo",
+    "owner": "D1DX",
+    "root": "/Users/danielrudaev/Desktop/airtable-solutions",
+    "requires_mcp_template": false
+  },
+  "providers": {
+    "required": [
+      "claude",
+      "codex"
+    ],
+    "optional": [
+      "gemini"
+    ]
+  },
+  "workflows": {
+    "routing": "required",
+    "logging": "required",
+    "sync": "required"
+  },
+  "docs": {
+    "required": [
+      "docs/status.md",
+      "docs/risks.md",
+      "docs/roadmap.md",
+      "docs/architecture.md",
+      "docs/decisions.md",
+      "docs/issues.md",
+      "docs/tasks.md"
+    ]
+  },
+  "security": {
+    "runtime_secret_files": [
+      ".mcp.json",
+      ".claude/settings.json"
+    ],
+    "ci_guard": "scripts/ci-guard.py"
+  },
+  "notifications": {
+    "channel": "ntfy",
+    "adapter": "setup-repo-managed"
+  }
+}
