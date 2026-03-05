@@ -17,10 +17,14 @@ jobs:
       - name: Run CI guard
         run: python3 scripts/ci-guard.py
       - name: Run doctor (non-invasive)
-        run: ./scripts/doctor.sh
+        if: ${{ hashFiles('scripts/doctor.sh') != '' }}
+        run: bash scripts/doctor.sh
       - name: Run shell syntax tests
-        run: ./scripts/test-shell-syntax.sh
+        if: ${{ hashFiles('scripts/test-shell-syntax.sh') != '' }}
+        run: bash scripts/test-shell-syntax.sh
       - name: Run runtime parity tests
-        run: ./scripts/test-runtime-parity.sh
+        if: ${{ hashFiles('scripts/test-runtime-parity.sh') != '' }}
+        run: bash scripts/test-runtime-parity.sh
       - name: Run workflow contract tests
-        run: ./scripts/test-workflow-contract.sh
+        if: ${{ hashFiles('scripts/test-workflow-contract.sh') != '' }}
+        run: bash scripts/test-workflow-contract.sh
