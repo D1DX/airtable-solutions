@@ -3,6 +3,7 @@
 [![Author](https://img.shields.io/badge/Author-Daniel_Rudaev-000000?style=flat)](https://github.com/daniel-rudaev)
 [![Studio](https://img.shields.io/badge/Studio-D1DX-000000?style=flat)](https://d1dx.com)
 [![Airtable](https://img.shields.io/badge/Airtable-18BFFF?style=flat&logo=airtable&logoColor=white)](https://airtable.com)
+[![License](https://img.shields.io/badge/License-MIT-green?style=flat)](./LICENSE)
 
 Production-tested Airtable automation scripts, extension scripts, formulas, and formula builders. Built from real operational workflows and digital transformation projects delivered through [D1DX](https://d1dx.com).
 
@@ -33,3 +34,7 @@ Browse the category folders, select a solution, and follow its README for setup 
 
 - Issues: [github.com/d1dx/airtable-solutions/issues](https://github.com/d1dx/airtable-solutions/issues)
 - Website: [d1dx.com](https://d1dx.com)
+
+## License
+
+MIT License — Copyright (c) 2026 Daniel Rudaev @ D1DX
